@@ -1,0 +1,20 @@
+# Local environment secrets
+.env
+
+# Flutter/Dart
+.dart_tool/
+.packages
+.pub-cache/
+build/
+.idea/
+.vscode/
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
+
+# Generated files
+.pub/
+**/generated_plugin_registrant.dart

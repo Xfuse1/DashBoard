@@ -1,0 +1,25 @@
+name: dashboard
+description: A minimal demo app to run the Company UI widgets.
+publish_to: 'none'
+version: 0.0.1
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.2
+  supabase_flutter: ^1.4.0
+  flutter_dotenv: ^5.0.2
+  image_picker: ^1.2.0
+  url_launcher: ^6.1.7
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true
+  assets:
+    - .env
+    - assets/portfolio.json
