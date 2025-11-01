@@ -158,13 +158,13 @@ class HomePage extends StatelessWidget {
         'title': 'Employee',
         'desc': 'Company dashboard and management',
         'icon': Icons.business,
-        'link': 'https://example.com/employee'
+        'link': 'https://studio--employed5-86582846-acd41.us-central1.hosted.app'
       },
       {
         'title': 'CV Builder',
         'desc': 'Create and download your CV',
         'icon': Icons.article,
-        'link': 'https://example.com/cv-builder'
+        'link': 'http://studio--studio-7954367756-191fb.us-central1.hosted.app'
       },
       {
         'title': 'E-Commerce',
