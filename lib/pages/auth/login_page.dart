@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../theme/app_colors.dart';
 import '../../services/supabase_service.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -13,6 +14,89 @@ class _LoginPageState extends State<LoginPage> {
   final _emailCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
   bool _loading = false;
+
+  Future<void> _forgotPassword() async {
+    final ctrl = TextEditingController(text: _emailCtrl.text.trim());
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('Reset password'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Enter your account email to receive a reset link.'),
+              const SizedBox(height: 12),
+              TextField(
+                controller: ctrl,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  hintText: 'you@example.com',
+                  labelText: 'Email',
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+              child: const Text('Send link'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (result == null || result.isEmpty) return;
+    try {
+      if (!SupabaseService.initialized) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Supabase not initialized. Configure .env first.')));
+        return;
+      }
+
+      final auth = SupabaseService.client.auth;
+      // Best-effort redirect URL: use current origin on web; otherwise rely on Site URL
+      String? redirectTo;
+      if (kIsWeb) {
+        final b = Uri.base;
+        final portPart = (b.hasPort && b.port != 80 && b.port != 443)
+            ? ':${b.port}'
+            : '';
+        // Send users to a dedicated reset page in this app.
+        redirectTo = '${b.scheme}://${b.host}$portPart/reset-password';
+      }
+
+      bool sent = false;
+      try {
+        await (auth as dynamic)
+            .resetPasswordForEmail(email: result, redirectTo: redirectTo);
+        sent = true;
+      } catch (_) {
+        try {
+          await (auth as dynamic)
+              .resetPasswordForEmail(result, redirectTo: redirectTo);
+          sent = true;
+        } catch (e) {
+          rethrow;
+        }
+      }
+
+      if (sent && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Reset email sent. Check your inbox.')));
+      }
+    } catch (err) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to send reset email: $err')));
+    }
+  }
 
   Future<void> _signIn() async {
     final email = _emailCtrl.text.trim();
@@ -125,7 +209,7 @@ class _LoginPageState extends State<LoginPage> {
       // Debug: show what we resolved for troubleshooting navigation issues
       if (mounted) {
         final dbg =
-            'login debug: userId=${userId ?? 'null'} destination=${destination ?? 'null'}';
+            'login Is Done ';
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text(dbg)));
         // ignore: avoid_print
@@ -227,7 +311,7 @@ class _LoginPageState extends State<LoginPage> {
               Align(
                   alignment: Alignment.centerLeft,
                   child: TextButton(
-                      onPressed: () {},
+                      onPressed: _forgotPassword,
                       child: const Text('Forgot your password?'))),
               const SizedBox(height: 8),
               SizedBox(

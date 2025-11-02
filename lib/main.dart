@@ -5,14 +5,22 @@ import 'pages/seeker/seeker_dashboard.dart';
 import 'pages/employee/employee_dashboard.dart';
 import 'pages/auth/login_page.dart';
 import 'pages/auth/signup_page.dart';
+import 'pages/auth/reset_password_page.dart';
 import 'pages/home_page.dart';
 import 'services/theme_service.dart';
 import 'pages/about_page.dart';
 import 'pages/services_page.dart';
 import 'theme/app_colors.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter_web_plugins/url_strategy.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Use clean URLs on web so /reset-password is recognized as a route
+  // instead of default hash-based URLs.
+  if (kIsWeb) {
+    setUrlStrategy(PathUrlStrategy());
+  }
   try {
     await SupabaseService.init();
   } catch (e) {
@@ -31,6 +39,21 @@ class MyApp extends StatelessWidget {
     return ValueListenableBuilder<ThemeMode>(
       valueListenable: themeNotifier,
       builder: (context, mode, _) {
+        bool _hasRecoveryParams(Uri uri) {
+          try {
+            final type = uri.queryParameters['type'] ?? '';
+            if (type.toLowerCase() == 'recovery') return true;
+            if (uri.fragment.isNotEmpty) {
+              final frag = Uri.splitQueryString(uri.fragment);
+              final fType = (frag['type'] ?? '').toLowerCase();
+              if (fType == 'recovery') return true;
+            }
+          } catch (_) {}
+          return false;
+        }
+
+        final initialRoute = _hasRecoveryParams(Uri.base) ? '/reset-password' : '/';
+
         return MaterialApp(
           title: 'Dashboard Demo',
           debugShowCheckedModeBanner: false,
@@ -74,14 +97,16 @@ class MyApp extends StatelessWidget {
                 backgroundColor: AppColors.accent.withValues(alpha: 0.9)),
           ),
           themeMode: mode,
-          home: const HomePage(),
+          initialRoute: initialRoute,
           routes: {
+            '/': (_) => const HomePage(),
             '/seeker': (_) => const SeekerDashboard(),
             '/employee': (_) => const EmployeeDashboard(),
             '/about': (_) => const AboutPage(),
             '/services': (_) => const ServicesPage(),
             '/login': (_) => const LoginPage(),
             '/signup': (_) => const SignupPage(),
+            '/reset-password': (_) => const ResetPasswordPage(),
           },
         );
       },

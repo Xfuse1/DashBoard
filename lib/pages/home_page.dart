@@ -1,11 +1,95 @@
 import 'package:flutter/material.dart';
+import '../services/supabase_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:convert';
 import 'package:flutter/services.dart' show rootBundle;
 import '../services/theme_service.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/scheduler.dart' show SchedulerBinding;
 
-class HomePage extends StatelessWidget {
+class HomePage extends StatefulWidget {
   const HomePage({super.key});
+
+  @override
+  State<HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends State<HomePage> {
+  String? _fullName;
+  String? _destination;
+
+  @override
+  void initState() {
+    super.initState();
+    // If the app was opened via a Supabase recovery link but,
+    // for any reason, we landed on Home, route to reset page.
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      try {
+        final uri = Uri.base;
+        final isRecovery = (uri.queryParameters['type'] ?? '').toLowerCase() == 'recovery' ||
+            (uri.fragment.isNotEmpty &&
+                ((Uri.splitQueryString(uri.fragment)['type'] ?? '').toLowerCase() == 'recovery')) ||
+            uri.path.endsWith('/reset-password');
+        if (kIsWeb && isRecovery && mounted) {
+          Navigator.pushReplacementNamed(context, '/reset-password');
+          return;
+        }
+      } catch (_) {}
+    });
+    _loadCurrentProfile();
+  }
+
+  Future<void> _loadCurrentProfile() async {
+    try {
+      if (!SupabaseService.initialized) return;
+      final userId = SupabaseService.client.auth.currentUser?.id;
+      if (userId == null) return;
+
+      // Try seeker profile first
+      try {
+        final seeker =
+            await (SupabaseService.client.from('seeker_profiles') as dynamic)
+                .select()
+                .eq('id', userId)
+                .maybeSingle();
+        if (seeker != null) {
+          if (!mounted) return;
+          setState(() {
+            _fullName = seeker['full_name'] ?? seeker['name'] ?? userId;
+            _destination = '/seeker';
+          });
+          return;
+        }
+      } catch (_) {}
+
+      // Try company/employer profile
+      try {
+        final company =
+            await (SupabaseService.client.from('companies') as dynamic)
+                .select()
+                .eq('owner_user_id', userId)
+                .maybeSingle();
+        if (company != null) {
+          if (!mounted) return;
+          setState(() {
+            _fullName = company['name_en'] ?? company['name_ar'] ?? userId;
+            _destination = '/employee';
+          });
+          return;
+        }
+      } catch (_) {}
+
+      // Fallback: use email or user id
+      try {
+        final email = SupabaseService.client.auth.currentUser?.email;
+        if (!mounted) return;
+        setState(() {
+          _fullName = email ?? SupabaseService.client.auth.currentUser?.id;
+          _destination = '/seeker';
+        });
+      } catch (_) {}
+    } catch (_) {}
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -72,11 +156,7 @@ class HomePage extends StatelessWidget {
               ],
             ),
           ),
-          // Language
-          TextButton(
-            onPressed: () {},
-            child: const Text('En'),
-          ),
+         
           const SizedBox(width: 8),
           // Theme toggle
           ValueListenableBuilder<ThemeMode>(
@@ -95,21 +175,65 @@ class HomePage extends StatelessWidget {
               );
             },
           ),
-          // Login
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pushNamed(context, '/login');
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.primary,
-              foregroundColor: Theme.of(context).colorScheme.onPrimary,
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-            child: const Text('Login'),
-          ),
+          // Login / profile button
+          _fullName == null
+              ? ElevatedButton(
+                  onPressed: () {
+                    Navigator.pushNamed(context, '/login');
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Theme.of(context).colorScheme.primary,
+                    foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: const Text('Login'),
+                )
+              : Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ElevatedButton(
+                      onPressed: () {
+                        final dest = _destination ?? '/seeker';
+                        Navigator.pushReplacementNamed(context, dest);
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Theme.of(context).colorScheme.primary,
+                        foregroundColor:
+                            Theme.of(context).colorScheme.onPrimary,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 24, vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      child: Text(_fullName ?? 'Account'),
+                    ),
+                    const SizedBox(width: 8),
+                    // Logout icon button
+                    IconButton(
+                      tooltip: 'Logout',
+                      onPressed: () async {
+                        // Sign out and clear stored project binding, then show login
+                        try {
+                          await SupabaseService.signOutAndClearBinding();
+                        } catch (_) {}
+                        if (!mounted) return;
+                        // Reset local state and navigate to login
+                        setState(() {
+                          _fullName = null;
+                          _destination = null;
+                        });
+                        Navigator.pushReplacementNamed(context, '/login');
+                      },
+                      icon: Icon(Icons.logout,
+                          color: Theme.of(context).colorScheme.primary),
+                    ),
+                  ],
+                ),
         ],
       ),
     );
@@ -131,20 +255,75 @@ class HomePage extends StatelessWidget {
     );
   }
 
+  Future<Uri> _buildSsoUri(String link) async {
+    // Default to the plain URL
+    Uri target = Uri.parse(link);
+    try {
+      if (!SupabaseService.initialized) return target;
+      // If not logged in, don't attach anything
+      final user = SupabaseService.client.auth.currentUser;
+      if (user == null) return target;
+
+      // Try to read access/refresh tokens across possible client versions
+      final authDyn = SupabaseService.client.auth as dynamic;
+      String? accessToken;
+      String? refreshToken;
+      try {
+        final cs = authDyn.currentSession;
+        accessToken = cs?.accessToken ?? cs?.access_token;
+        refreshToken = cs?.refreshToken ?? cs?.refresh_token;
+      } catch (_) {}
+      if (accessToken == null || refreshToken == null) {
+        try {
+          final sess = await authDyn.session();
+          accessToken = accessToken ?? sess?.accessToken ?? sess?.access_token;
+          refreshToken =
+              refreshToken ?? sess?.refreshToken ?? sess?.refresh_token;
+        } catch (_) {}
+      }
+      // Strongly typed fallback
+      try {
+        accessToken = accessToken ??
+            SupabaseService.client.auth.currentSession?.accessToken;
+        refreshToken = refreshToken ??
+            SupabaseService.client.auth.currentSession?.refreshToken;
+      } catch (_) {}
+
+      if (accessToken == null || refreshToken == null) return target;
+
+      // Prefer using URL fragment so tokens don't hit server logs
+      final existingFragment = target.fragment;
+      final ssoParams = [
+        'sso=supabase',
+        'access_token=${Uri.encodeComponent(accessToken)}',
+        'refresh_token=${Uri.encodeComponent(refreshToken)}',
+      ].join('&');
+      final newFragment = existingFragment.isEmpty
+          ? ssoParams
+          : '$existingFragment&$ssoParams';
+      target = target.replace(fragment: newFragment);
+      return target;
+    } catch (_) {
+      return target;
+    }
+  }
+
   Future<void> _openLink(BuildContext context, String link) async {
-    // If link looks like an HTTP link, open externally. Otherwise treat as route.
+    // If link looks like an HTTP link, open externally (with SSO attach if possible).
     if (link.startsWith('http')) {
-      final uri = Uri.parse(link);
+      final uri = await _buildSsoUri(link);
       try {
         if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-          if (context.mounted)
+          if (context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('Could not open link')));
+          }
         }
       } catch (_) {
-        if (context.mounted)
+        if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('Could not open link')));
+        }
       }
     } else {
       Navigator.pushNamed(context, link);
@@ -158,7 +337,8 @@ class HomePage extends StatelessWidget {
         'title': 'Employee',
         'desc': 'Company dashboard and management',
         'icon': Icons.business,
-        'link': 'https://studio--employed5-86582846-acd41.us-central1.hosted.app'
+        'link':
+            'https://studio--employed5-86582846-acd41.us-central1.hosted.app'
       },
       {
         'title': 'CV Builder',

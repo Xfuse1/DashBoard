@@ -5,6 +5,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 // flutter/foundation imported earlier but not required; keep file minimal.
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class SupabaseService {
   // Whether Supabase.initialize has been called successfully.
@@ -46,6 +47,49 @@ class SupabaseService {
       // necessary via dotenv, but we do NOT pass it to the client initializer.
     );
     initialized = true;
+    // Enforce stored project binding: if the app was previously bound to a
+    // different Supabase URL, clear session so user must sign in again.
+    try {
+      await _enforceProjectBinding(url);
+    } catch (_) {}
+  }
+
+  static Future<void> _enforceProjectBinding(String url) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final stored = prefs.getString('supabase_project_url');
+      if (stored == null) return; // nothing bound yet
+      if (stored != url) {
+        // project changed: sign out and clear binding
+        try {
+          await Supabase.instance.client.auth.signOut();
+        } catch (_) {}
+        await prefs.remove('supabase_project_url');
+      }
+    } catch (_) {}
+  }
+
+  /// Persist the current Supabase project URL so future app runs detect
+  /// mismatches and require re-login.
+  static Future<void> bindCurrentProject() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final url = dotenv.env['SUPABASE_URL'] ??
+          dotenv.env['NEXT_PUBLIC_SUPABASE_URL'] ??
+          const String.fromEnvironment('SUPABASE_URL', defaultValue: '');
+      if (url.isNotEmpty) await prefs.setString('supabase_project_url', url);
+    } catch (_) {}
+  }
+
+  /// Sign out the current user and clear the stored project binding.
+  static Future<void> signOutAndClearBinding() async {
+    try {
+      try {
+        await Supabase.instance.client.auth.signOut();
+      } catch (_) {}
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('supabase_project_url');
+    } catch (_) {}
   }
 
   /// Safe helper: attempt to fetch from Supabase, return empty list on any error.
