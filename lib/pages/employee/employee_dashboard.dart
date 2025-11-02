@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../../theme/app_colors.dart';
-import '../home_page.dart';
 import 'employee_edit.dart';
 import '../payments/payments_page.dart';
 import '../payments/credit_page.dart';
@@ -73,10 +72,10 @@ class EmployeeDashboard extends StatelessWidget {
             const SizedBox(height: 8),
             OutlinedButton(
               onPressed: () {
-                // Navigate back to the app HomePage and clear navigation stack
-                Navigator.pushAndRemoveUntil(
+                // Navigate back to the home page
+                Navigator.pushNamedAndRemoveUntil(
                   context,
-                  MaterialPageRoute(builder: (_) => const HomePage()),
+                  '/home',
                   (route) => false,
                 );
               },

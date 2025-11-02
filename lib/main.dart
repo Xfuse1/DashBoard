@@ -52,7 +52,8 @@ class MyApp extends StatelessWidget {
           return false;
         }
 
-        final initialRoute = _hasRecoveryParams(Uri.base) ? '/reset-password' : '/';
+        final initialRoute =
+            _hasRecoveryParams(Uri.base) ? '/reset-password' : '/login';
 
         return MaterialApp(
           title: 'Dashboard Demo',
@@ -99,7 +100,8 @@ class MyApp extends StatelessWidget {
           themeMode: mode,
           initialRoute: initialRoute,
           routes: {
-            '/': (_) => const HomePage(),
+            '/': (_) => const LoginPage(),
+            '/home': (_) => const HomePage(),
             '/seeker': (_) => const SeekerDashboard(),
             '/employee': (_) => const EmployeeDashboard(),
             '/about': (_) => const AboutPage(),
