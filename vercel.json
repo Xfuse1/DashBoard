@@ -1,100 +1,10 @@
 {
-    "functions": {
-        "build/web/**": {
-            "maxDuration": 10
-        }
-    },
+    "outputDirectory": "build/web",
+    "trailingSlash": false,
     "rewrites": [
         {
-            "source": "/flutter.js",
-            "destination": "/build/web/flutter.js"
-        },
-        {
-            "source": "/flutter_bootstrap.js",
-            "destination": "/build/web/flutter_bootstrap.js"
-        },
-        {
-            "source": "/flutter_service_worker.js",
-            "destination": "/build/web/flutter_service_worker.js"
-        },
-        {
-            "source": "/main.dart.js",
-            "destination": "/build/web/main.dart.js"
-        },
-        {
-            "source": "/version.json",
-            "destination": "/build/web/version.json"
-        },
-        {
-            "source": "/manifest.json",
-            "destination": "/build/web/manifest.json"
-        },
-        {
-            "source": "/favicon.png",
-            "destination": "/build/web/favicon.png"
-        },
-        {
-            "source": "/assets/(.*)",
-            "destination": "/build/web/assets/$1"
-        },
-        {
-            "source": "/canvaskit/(.*)",
-            "destination": "/build/web/canvaskit/$1"
-        },
-        {
-            "source": "/icons/(.*)",
-            "destination": "/build/web/icons/$1"
-        },
-        {
             "source": "/(.*)",
-            "destination": "/build/web/index.html"
-        }
-    ],
-    "headers": [
-        {
-            "source": "/build/web/main.dart.js",
-            "headers": [
-                {
-                    "key": "Content-Type",
-                    "value": "application/javascript; charset=utf-8"
-                }
-            ]
-        },
-        {
-            "source": "/build/web/flutter.js",
-            "headers": [
-                {
-                    "key": "Content-Type",
-                    "value": "application/javascript; charset=utf-8"
-                }
-            ]
-        },
-        {
-            "source": "/build/web/flutter_bootstrap.js",
-            "headers": [
-                {
-                    "key": "Content-Type",
-                    "value": "application/javascript; charset=utf-8"
-                }
-            ]
-        },
-        {
-            "source": "/build/web/flutter_service_worker.js",
-            "headers": [
-                {
-                    "key": "Content-Type",
-                    "value": "application/javascript; charset=utf-8"
-                }
-            ]
-        },
-        {
-            "source": "/build/web/(.*)",
-            "headers": [
-                {
-                    "key": "Cache-Control",
-                    "value": "public, max-age=31536000, immutable"
-                }
-            ]
+            "destination": "/index.html"
         }
     ]
 }
