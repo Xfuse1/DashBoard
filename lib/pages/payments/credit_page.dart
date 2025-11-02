@@ -4,6 +4,11 @@ import 'package:image_picker/image_picker.dart';
 import '../../theme/app_colors.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/supabase_service.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import '../../services/kashier_service.dart';
+import 'kashier_checkout_page.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:url_launcher/url_launcher.dart';
 
 class CreditPage extends StatefulWidget {
   final String title;
@@ -258,7 +263,7 @@ class _CreditPageState extends State<CreditPage> {
                   Navigator.pop(c, true);
                 }
               },
-              child: const Text('Save')),
+              child: const Text('Continue')),
         ],
       ),
     );
@@ -273,6 +278,121 @@ class _CreditPageState extends State<CreditPage> {
           ? 'TOPUP-${now.millisecondsSinceEpoch % 100000}'
           : referenceCtrl.text.trim();
 
+      // Branch: If method is 'card' -> Kashier checkout; else keep current flow
+      if (provider.value == 'card') {
+        try {
+          // Read Kashier config
+          // Ensure dotenv loaded (already done in SupabaseService.init())
+          final cfg = KashierConfig.fromEnv();
+          final amountStr = KashierService.formatAmount(amt);
+
+          // Use internal URLs for success/failure, only for navigation detection (no server).
+          final successUrl = Uri.parse('https://success.kashier/callback');
+          final failureUrl = Uri.parse('https://failure.kashier/callback');
+
+          final hppUrl = KashierService.buildHostedPaymentUri(
+            config: cfg,
+            orderId: reference,
+            amount: amountStr,
+            currency: cfg.currency,
+            mode: cfg.mode,
+            merchantRedirect: successUrl.toString(),
+            failureRedirect: failureUrl.toString(),
+            allowedMethods: 'card',
+            defaultMethod: 'card',
+            redirectMethod: 'get',
+          );
+
+          KashierCheckoutResult? result;
+          if (kIsWeb) {
+            // On web, open in new tab. We cannot intercept reliably; ask user to confirm.
+            await launchUrl(hppUrl, mode: LaunchMode.platformDefault);
+            final confirmed = await showDialog<bool>(
+              context: context,
+              builder: (c) => AlertDialog(
+                title: const Text('Confirm Payment'),
+                content: const Text(
+                    'Complete the payment in the opened tab, then return here and press Confirm.'),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(c, false),
+                      child: const Text('Cancel')),
+                  ElevatedButton(
+                      onPressed: () => Navigator.pop(c, true),
+                      child: const Text('Confirm Paid')),
+                ],
+              ),
+            );
+            result = confirmed == true
+                ? KashierCheckoutResult(success: true)
+                : KashierCheckoutResult(success: false);
+          } else {
+            result = await Navigator.of(context).push<KashierCheckoutResult>(
+              MaterialPageRoute(
+                builder: (_) => KashierCheckoutPage(
+                  checkoutUrl: hppUrl,
+                  successUrl: successUrl,
+                  failureUrl: failureUrl,
+                ),
+              ),
+            );
+          }
+
+          if (result?.success == true) {
+            // On success, record top-up (no receipt)
+            final newRow = {
+              'date': now.toIso8601String(),
+              'type': 'Top-up',
+              'amount': amt,
+              'balance_after': (_balance + amt),
+              'reference': reference,
+              'method': 'card',
+              'notes': notesCtrl.text.trim(),
+            };
+
+            bool savedToDb = false;
+            try {
+              final client = SupabaseService.client;
+              final userId = client.auth.currentUser?.id;
+              final insertRow = Map<String, dynamic>.from(newRow);
+              if (userId != null) insertRow['user_id'] = userId;
+              final resp = await client.from('credit_ledger').insert(insertRow).execute();
+              if (resp.data != null) savedToDb = true;
+            } catch (_) {}
+
+            setState(() {
+              _balance += amt;
+              _ledger.insert(0, {
+                'date': now,
+                'type': 'Top-up',
+                'amount': amt,
+                'balanceAfter': _balance,
+                'reference': reference,
+                'method': 'card',
+                'notes': notesCtrl.text.trim(),
+                'receipt': null,
+              });
+            });
+
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text(savedToDb
+                    ? 'Payment successful — top-up saved'
+                    : 'Payment successful')));
+          } else {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Payment canceled or failed')));
+          }
+        } catch (e) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Payment error: $e')));
+        }
+        return;
+      }
+
+      // Non-card methods: existing flow with optional receipt upload
       final newRow = {
         'date': now.toIso8601String(),
         'type': 'Top-up',
@@ -283,22 +403,17 @@ class _CreditPageState extends State<CreditPage> {
         'notes': notesCtrl.text.trim(),
       };
 
-      // If a file was picked, upload it first and use its public URL.
       String? receiptUrl;
       if (_pickedReceipt != null) {
         try {
           final client = SupabaseService.client;
           final userId = client.auth.currentUser?.id;
-          if (userId == null)
-            throw Exception('Sign in required to upload receipts');
-          final sanitized =
-              _sanitizeFileName(_pickedReceipt!.name.toLowerCase());
-          final path =
-              'receipts/$userId/${DateTime.now().millisecondsSinceEpoch}_$sanitized';
+          if (userId == null) throw Exception('Sign in required to upload receipts');
+          final sanitized = _sanitizeFileName(_pickedReceipt!.name.toLowerCase());
+          final path = 'receipts/$userId/${DateTime.now().millisecondsSinceEpoch}_$sanitized';
           final bytes = await _pickedReceipt!.readAsBytes();
           final storage = client.storage.from(_receiptBucket);
-          final options = FileOptions(
-              contentType: _mimeTypeForFile(sanitized), upsert: true);
+          final options = FileOptions(contentType: _mimeTypeForFile(sanitized), upsert: true);
           try {
             await storage.uploadBinary(path, bytes, fileOptions: options);
           } catch (err) {
@@ -310,34 +425,29 @@ class _CreditPageState extends State<CreditPage> {
           }
           receiptUrl = storage.getPublicUrl(path);
         } catch (e) {
-          if (mounted)
-            ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Receipt upload failed: $e')));
+          if (mounted) {
+            ScaffoldMessenger.of(context)
+                .showSnackBar(SnackBar(content: Text('Receipt upload failed: $e')));
+          }
         }
       }
 
-      // Try to save to Supabase `credit_ledger` table. If that fails, keep
-      // local mock behavior and inform the user.
       bool savedToDb = false;
       try {
         final client = SupabaseService.client;
         final userId = client.auth.currentUser?.id;
         final insertRow = Map<String, dynamic>.from(newRow);
         if (userId != null) insertRow['user_id'] = userId;
-        // prefer uploaded receipt URL, else the manual URL field
         if (receiptUrl != null) {
           insertRow['receipt'] = receiptUrl;
         } else if (receiptCtrl.text.trim().isNotEmpty) {
           insertRow['receipt'] = receiptCtrl.text.trim();
         }
-        final resp =
-            await client.from('credit_ledger').insert(insertRow).execute();
+        final resp = await client.from('credit_ledger').insert(insertRow).execute();
         if (resp.data != null) {
           savedToDb = true;
         }
-      } catch (e) {
-        // ignore - handled below
-      }
+      } catch (_) {}
 
       setState(() {
         _balance += amt;
@@ -349,19 +459,13 @@ class _CreditPageState extends State<CreditPage> {
           'reference': reference,
           'method': provider.value,
           'notes': notesCtrl.text.trim(),
-          'receipt':
-              receiptCtrl.text.trim().isEmpty ? null : receiptCtrl.text.trim(),
+          'receipt': receiptCtrl.text.trim().isEmpty ? null : receiptCtrl.text.trim(),
         });
       });
 
       if (!mounted) return;
-      if (savedToDb) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('Top-up saved')));
-      } else {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('Done')));
-      }
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(savedToDb ? 'Top-up saved' : 'Done')));
     }
   }
 
