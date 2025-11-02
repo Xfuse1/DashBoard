@@ -1,5 +1,38 @@
 {
+    "functions": {
+        "build/web/**": {
+            "maxDuration": 10
+        }
+    },
     "rewrites": [
+        {
+            "source": "/flutter.js",
+            "destination": "/build/web/flutter.js"
+        },
+        {
+            "source": "/flutter_bootstrap.js",
+            "destination": "/build/web/flutter_bootstrap.js"
+        },
+        {
+            "source": "/flutter_service_worker.js",
+            "destination": "/build/web/flutter_service_worker.js"
+        },
+        {
+            "source": "/main.dart.js",
+            "destination": "/build/web/main.dart.js"
+        },
+        {
+            "source": "/version.json",
+            "destination": "/build/web/version.json"
+        },
+        {
+            "source": "/manifest.json",
+            "destination": "/build/web/manifest.json"
+        },
+        {
+            "source": "/favicon.png",
+            "destination": "/build/web/favicon.png"
+        },
         {
             "source": "/assets/(.*)",
             "destination": "/build/web/assets/$1"
@@ -9,8 +42,8 @@
             "destination": "/build/web/canvaskit/$1"
         },
         {
-            "source": "/(.*\\.(js|css|html|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot))$",
-            "destination": "/build/web/$1"
+            "source": "/icons/(.*)",
+            "destination": "/build/web/icons/$1"
         },
         {
             "source": "/(.*)",
@@ -19,11 +52,38 @@
     ],
     "headers": [
         {
-            "source": "/build/web/(.*\\.(js|css))$",
+            "source": "/build/web/main.dart.js",
             "headers": [
                 {
                     "key": "Content-Type",
-                    "value": "text/javascript; charset=utf-8"
+                    "value": "application/javascript; charset=utf-8"
+                }
+            ]
+        },
+        {
+            "source": "/build/web/flutter.js",
+            "headers": [
+                {
+                    "key": "Content-Type",
+                    "value": "application/javascript; charset=utf-8"
+                }
+            ]
+        },
+        {
+            "source": "/build/web/flutter_bootstrap.js",
+            "headers": [
+                {
+                    "key": "Content-Type",
+                    "value": "application/javascript; charset=utf-8"
+                }
+            ]
+        },
+        {
+            "source": "/build/web/flutter_service_worker.js",
+            "headers": [
+                {
+                    "key": "Content-Type",
+                    "value": "application/javascript; charset=utf-8"
                 }
             ]
         },
