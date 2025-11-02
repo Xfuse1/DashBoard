@@ -6,6 +6,7 @@
 .packages
 .pub-cache/
 build/
+!build/web/
 .idea/
 .vscode/
 
@@ -18,3 +19,4 @@ build/
 # Generated files
 .pub/
 **/generated_plugin_registrant.dart
+.vercel
